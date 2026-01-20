@@ -48,3 +48,5 @@ drizzle/
 
 # Cursor MCP config (project-specific, may contain tokens)
 .cursor/
+
+.vercel
