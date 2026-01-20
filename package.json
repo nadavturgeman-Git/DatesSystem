@@ -9,7 +9,11 @@
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:scenarios": "tsx --env-file=.env.local test-scenarios.ts",
+    "seed:demo": "tsx seed-demo-data.ts"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.15.0",
@@ -22,15 +26,22 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.16.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@vitest/ui": "^4.0.17",
     "autoprefixer": "^10.4.20",
+    "dotenv": "^17.2.3",
     "drizzle-kit": "^0.30.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.18",
+    "pg": "^8.17.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.2"
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.17"
   }
 }

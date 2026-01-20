@@ -39,30 +39,30 @@ export default function DashboardNav({ user, profile }: DashboardNavProps) {
               ראשי
             </Link>
             <Link
-              href="/orders/new"
+              href="/catalog"
               className="text-emerald-600 hover:text-emerald-700 font-semibold transition"
+            >
+              🛒 קטלוג תמרים
+            </Link>
+            <Link
+              href="/orders/new"
+              className="text-gray-700 hover:text-emerald-600 font-medium transition"
             >
               + הזמנה חדשה
             </Link>
             {profile?.role === 'admin' && (
               <>
                 <Link
-                  href="/dashboard/inventory"
+                  href="/admin"
                   className="text-gray-700 hover:text-emerald-600 font-medium transition"
                 >
-                  מלאי
+                  לוח בקרה
                 </Link>
                 <Link
-                  href="/dashboard/orders"
+                  href="/orders"
                   className="text-gray-700 hover:text-emerald-600 font-medium transition"
                 >
                   הזמנות
-                </Link>
-                <Link
-                  href="/dashboard/distributors"
-                  className="text-gray-700 hover:text-emerald-600 font-medium transition"
-                >
-                  מפיצים
                 </Link>
               </>
             )}
@@ -71,8 +71,23 @@ export default function DashboardNav({ user, profile }: DashboardNavProps) {
           {/* User Menu */}
           <div className="flex items-center space-x-4 space-x-reverse">
             <div className="text-right hidden md:block">
-              <p className="text-sm font-medium text-gray-900">{profile?.full_name}</p>
+              <p className="text-sm font-medium text-gray-900">{profile?.full_name || user.email || 'ללא שם'}</p>
               <p className="text-xs text-gray-500">{user.email}</p>
+              {profile ? (
+                profile.role ? (
+                  <p className={`text-xs font-semibold ${
+                    profile.role === 'admin' ? 'text-purple-600' : 
+                    profile.role === 'team_leader' ? 'text-blue-600' : 
+                    'text-green-600'
+                  }`}>
+                    {profile.role === 'admin' ? '👑 מנהל' : profile.role === 'team_leader' ? '👥 ראש צוות' : '📦 מפיץ'}
+                  </p>
+                ) : (
+                  <p className="text-xs text-orange-600">⚠️ תפקיד: {JSON.stringify(profile.role)}</p>
+                )
+              ) : (
+                <p className="text-xs text-red-600">⚠️ Profile: null/undefined</p>
+              )}
             </div>
             <button
               onClick={handleLogout}

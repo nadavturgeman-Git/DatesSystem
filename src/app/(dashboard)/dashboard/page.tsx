@@ -1,55 +1,196 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client'
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+interface DashboardStats {
+  warehouses: any[]
+  products: any[]
+  totalInventory: number
+  palletsCount: number
+}
 
-  if (!user) {
-    redirect('/login');
+export default function DashboardPage() {
+  const supabase = createClient()
+  const [loading, setLoading] = useState(true)
+  const [profile, setProfile] = useState<any>(null)
+  const [user, setUser] = useState<any>(null)
+  const [publicOrderLink, setPublicOrderLink] = useState<string | null>(null)
+  const [stats, setStats] = useState<DashboardStats>({
+    warehouses: [],
+    products: [],
+    totalInventory: 0,
+    palletsCount: 0,
+  })
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  async function loadData() {
+    try {
+      // Get user
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      if (!currentUser) {
+        window.location.href = '/login'
+        return
+      }
+
+      setUser(currentUser)
+
+      // Get profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .single()
+
+      setProfile(profileData)
+
+      // Set public order link for distributors
+      if (profileData?.role === 'distributor') {
+        const baseUrl = window.location.origin
+        setPublicOrderLink(`${baseUrl}/order/${currentUser.id}`)
+      }
+
+      // Get stats via API (handles RLS properly)
+      const response = await fetch('/api/dashboard/stats')
+      const data = await response.json()
+
+      console.log('[Dashboard] API Response:', { ok: response.ok, data })
+
+      if (response.ok) {
+        setStats(data)
+      } else {
+        console.error('Error loading stats:', data.error)
+      }
+    } catch (error: any) {
+      console.error('Error loading dashboard:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Get user profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single();
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">טוען נתונים...</p>
+        </div>
+      </div>
+    )
+  }
 
-  // Get warehouses
-  const { data: warehouses } = await supabase
-    .from('warehouses')
-    .select('*')
-    .eq('is_active', true);
+  const { warehouses, products, totalInventory } = stats
+  const isDistributor = profile?.role === 'distributor'
 
-  // Get products
-  const { data: products } = await supabase
-    .from('products')
-    .select('*')
-    .eq('is_active', true);
-
-  // Get total inventory (sum of all pallets)
-  const { data: pallets } = await supabase
-    .from('pallets')
-    .select('current_weight_kg')
-    .eq('is_depleted', false);
-
-  const totalInventory = pallets?.reduce((sum, pallet) => sum + (pallet.current_weight_kg || 0), 0) || 0;
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      alert('הקישור הועתק ללוח!')
+    } catch (err) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = text
+      textArea.style.position = 'fixed'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        alert('הקישור הועתק ללוח!')
+      } catch (err) {
+        alert('לא ניתן להעתיק. אנא העתק ידנית.')
+      }
+      document.body.removeChild(textArea)
+    }
+  }
 
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          שלום, {profile?.full_name || user.email}!
-        </h1>
-        <p className="text-gray-600">
-          תפקיד: <span className="font-semibold">{profile?.role === 'admin' ? 'מנהל' : profile?.role === 'team_leader' ? 'ראש צוות' : 'מפיץ'}</span>
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              שלום, {profile?.full_name || user.email}!
+            </h1>
+            <p className="text-gray-600">
+              תפקיד: <span className="font-semibold">{profile?.role === 'admin' ? 'מנהל' : profile?.role === 'team_leader' ? 'ראש צוות' : 'מפיץ'}</span>
+            </p>
+          </div>
+          <Link
+            href="/catalog"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg transition flex items-center gap-2"
+          >
+            🛒 קטלוג תמרים
+          </Link>
+        </div>
       </div>
+
+      {/* Public Order Link for Distributors */}
+      {isDistributor && publicOrderLink && (
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold mb-2">🔗 קישור הזמנה ציבורי</h2>
+              <p className="text-emerald-50 mb-4">
+                שתף את הקישור הזה עם הלקוחות שלך כדי שיוכלו להזמין תמרים ישירות ללא התחברות
+              </p>
+              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={publicOrderLink}
+                    readOnly
+                    className="flex-1 bg-white/20 text-white placeholder-white/70 px-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50 font-mono text-sm"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    onClick={() => copyToClipboard(publicOrderLink)}
+                    className="px-6 py-2 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 font-semibold transition whitespace-nowrap flex items-center gap-2"
+                  >
+                    📋 העתק קישור
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`🌴 הזמנת תמרים טריים!\n\nלהזמנה ישירה:\n${publicOrderLink}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition flex items-center gap-2"
+                >
+                  📱 שתף בווטסאפ
+                </a>
+                <button
+                  onClick={() => {
+                    if (navigator.share) {
+                      navigator.share({
+                        title: 'הזמנת תמרים',
+                        text: '🌴 הזמנת תמרים טריים!',
+                        url: publicOrderLink,
+                      })
+                    } else {
+                      copyToClipboard(publicOrderLink)
+                    }
+                  }}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition flex items-center gap-2"
+                >
+                  🔗 שתף
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-white/20">
+            <p className="text-sm text-emerald-50">
+              💡 <strong>טיפ:</strong> הקישור הזה תמיד זמין וניתן לשתף אותו בכל עת. כל הזמנה דרך הקישור תירשם תחת השם שלך במערכת.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -57,7 +198,7 @@ export default async function DashboardPage() {
         <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg shadow-lg p-6 text-white">
           <h3 className="text-lg font-semibold mb-2">מלאי כולל</h3>
           <p className="text-4xl font-bold">{totalInventory.toLocaleString()}</p>
-          <p className="text-sm opacity-90 mt-1">ק"ג</p>
+          <p className="text-sm opacity-90 mt-1">ק&quot;ג</p>
         </div>
 
         {/* Warehouses */}
@@ -98,7 +239,7 @@ export default async function DashboardPage() {
               </div>
               <p className="text-gray-600 text-sm mb-1">מיקום: {warehouse.location}</p>
               <p className="text-gray-600 text-sm">
-                קיבולת: {warehouse.capacity_kg?.toLocaleString()} ק"ג
+                קיבולת: {warehouse.capacity_kg?.toLocaleString()} ק&quot;ג
               </p>
               {warehouse.spoilage_alert_days && (
                 <p className="text-amber-600 text-sm mt-2">
@@ -124,7 +265,7 @@ export default async function DashboardPage() {
                   זן
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  מחיר לק"ג
+                  מחיר לק&quot;ג
                 </th>
               </tr>
             </thead>

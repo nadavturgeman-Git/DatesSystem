@@ -28,10 +28,16 @@ export default async function Home() {
               מערכת מקיפה לניהול מלאי, מפיצים, הזמנות וחישוב עמלות
             </p>
 
-            <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center justify-center gap-4 flex-wrap">
+              <Link
+                href="/catalog"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-8 py-3 rounded-lg transition"
+              >
+                🛒 הזמן תמרים
+              </Link>
               <Link
                 href="/login"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-8 py-3 rounded-lg transition"
+                className="bg-white hover:bg-gray-50 text-emerald-600 border-2 border-emerald-600 font-semibold px-8 py-3 rounded-lg transition"
               >
                 התחבר למערכת
               </Link>

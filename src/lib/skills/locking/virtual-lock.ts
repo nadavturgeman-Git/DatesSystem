@@ -81,15 +81,20 @@ export async function createReservations(
       RETURNING id, order_id, pallet_id, reserved_weight_kg, expires_at, is_active
     `)
 
-    const row = result.rows[0]
-    reservations.push({
-      id: row.id as string,
-      orderId: row.order_id as string,
-      palletId: row.pallet_id as string,
-      reservedWeight: Number(row.reserved_weight_kg),
-      expiresAt: new Date(row.expires_at as string),
-      isActive: row.is_active as boolean,
-    })
+    // Handle both drizzle and raw postgres result formats
+    const rows = Array.isArray(result) ? result : (result as any).rows || []
+    const row = rows[0]
+    
+    if (row) {
+      reservations.push({
+        id: row.id as string,
+        orderId: row.order_id as string,
+        palletId: row.pallet_id as string,
+        reservedWeight: Number(row.reserved_weight_kg),
+        expiresAt: new Date(row.expires_at as string),
+        isActive: row.is_active as boolean,
+      })
+    }
   }
 
   // Update order with expiration time
@@ -140,7 +145,10 @@ export async function convertReservationsToAllocations(
     AND sr.is_active = TRUE
   `)
 
-  if (reservationsResult.rows.length === 0) {
+  // Handle both drizzle and raw postgres result formats
+  const reservationsRows = Array.isArray(reservationsResult) ? reservationsResult : (reservationsResult as any).rows || []
+  
+  if (reservationsRows.length === 0) {
     return {
       success: false,
       message: 'No active reservations found for this order',
@@ -149,7 +157,7 @@ export async function convertReservationsToAllocations(
 
   // Check if reservations have expired
   const now = new Date()
-  const hasExpired = reservationsResult.rows.some(
+  const hasExpired = reservationsRows.some(
     row => new Date(row.expires_at as string) < now
   )
 
@@ -168,23 +176,27 @@ export async function convertReservationsToAllocations(
     WHERE order_id = ${orderId}::uuid
   `)
 
+  // Handle both drizzle and raw postgres result formats
+  const orderItemsRows = Array.isArray(orderItemsResult) ? orderItemsResult : (orderItemsResult as any).rows || []
+
   // For each order item, create pallet allocations from reservations
-  for (const orderItem of orderItemsResult.rows) {
+  for (const orderItem of orderItemsRows) {
     const orderItemId = orderItem.id as string
     const productId = orderItem.product_id as string
 
     // Get reservations for this product
-    const productReservations = reservationsResult.rows.filter(
+    const productReservations = reservationsRows.filter(
       async r => {
         const palletResult = await db.execute(sql`
           SELECT product_id FROM pallets WHERE id = ${r.pallet_id}::uuid
         `)
-        return palletResult.rows[0]?.product_id === productId
+        const palletRows = Array.isArray(palletResult) ? palletResult : (palletResult as any).rows || []
+        return palletRows[0]?.product_id === productId
       }
     )
 
     // Create pallet allocations
-    for (const reservation of reservationsResult.rows) {
+    for (const reservation of reservationsRows) {
       await db.execute(sql`
         INSERT INTO pallet_allocations (order_item_id, pallet_id, allocated_weight_kg)
         VALUES (
@@ -227,7 +239,9 @@ export async function convertReservationsToAllocations(
  */
 export async function releaseExpiredReservations(): Promise<number> {
   const result = await db.execute(sql`SELECT release_expired_reservations()`)
-  return Number(result.rows[0]?.release_expired_reservations || 0)
+  // Handle both drizzle and raw postgres result formats
+  const rows = Array.isArray(result) ? result : (result as any).rows || []
+  return Number(rows[0]?.release_expired_reservations || 0)
 }
 
 /**
@@ -248,7 +262,9 @@ export async function getOrderReservations(orderId: string): Promise<Reservation
     ORDER BY created_at ASC
   `)
 
-  return result.rows.map(row => ({
+  // Handle both drizzle and raw postgres result formats
+  const rows = Array.isArray(result) ? result : (result as any).rows || []
+  return rows.map(row => ({
     id: row.id as string,
     orderId: row.order_id as string,
     palletId: row.pallet_id as string,
@@ -280,7 +296,9 @@ export async function extendReservation(
     }
   }
 
-  const newExpiresAt = new Date(result.rows[0].expires_at as string)
+  // Handle both drizzle and raw postgres result formats
+  const rows = Array.isArray(result) ? result : (result as any).rows || []
+  const newExpiresAt = new Date(rows[0]?.expires_at as string)
 
   // Update order expiration time
   await db.execute(sql`

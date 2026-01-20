@@ -148,7 +148,7 @@ export default async function OrdersPage() {
                       </td>
                     )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {order.total_weight_kg} ק"ג
+                      {order.total_weight_kg} ק&quot;ג
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       ₪{order.total_amount?.toFixed(2)}

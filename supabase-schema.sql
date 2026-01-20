@@ -17,6 +17,7 @@ CREATE TYPE payment_status AS ENUM ('pending', 'paid', 'failed', 'refunded');
 CREATE TYPE payment_method AS ENUM ('credit_card', 'bit', 'paybox', 'cash');
 CREATE TYPE commission_type AS ENUM ('distributor', 'team_leader');
 CREATE TYPE commission_payment_type AS ENUM ('cash', 'goods');
+CREATE TYPE commission_settlement_type AS ENUM ('invoice_payslip', 'group_discount'); -- Invoice/Payslip vs Group Discount (הנחה קבוצתית)
 CREATE TYPE warehouse_type AS ENUM ('freezing', 'cooling');
 CREATE TYPE return_reason AS ENUM ('damaged', 'missed_collection', 'quality_issue', 'other');
 CREATE TYPE alert_type AS ENUM ('low_performance', 'spoilage_warning', 'stock_low', 'reservation_expired');
@@ -47,6 +48,7 @@ CREATE TABLE distributor_profiles (
     commission_rate DECIMAL(5, 2) DEFAULT 15.00, -- Base rate, can be overridden
     prefers_commission_in_goods BOOLEAN DEFAULT FALSE,
     account_balance DECIMAL(12, 2) DEFAULT 0.00, -- Credits from returns/damages
+    is_group_discount BOOLEAN DEFAULT FALSE, -- TRUE for Group Discount (הנחה קבוצתית), FALSE for Invoice/Payslip
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(user_id)
@@ -89,6 +91,7 @@ CREATE TABLE pallets (
     batch_number VARCHAR(100),
     expiry_date DATE,
     is_depleted BOOLEAN DEFAULT FALSE,
+    is_fresh_fruit BOOLEAN DEFAULT FALSE, -- For fresh fruit requiring cooling warehouse monitoring
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
@@ -179,6 +182,7 @@ CREATE TABLE commissions (
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
     commission_type commission_type NOT NULL,
     payment_type commission_payment_type NOT NULL DEFAULT 'cash',
+    settlement_type commission_settlement_type DEFAULT 'invoice_payslip', -- Invoice/Payslip vs Group Discount
     base_amount DECIMAL(12, 2) NOT NULL, -- Order amount used for calculation
     commission_rate DECIMAL(5, 2) NOT NULL, -- Percentage applied
     commission_amount DECIMAL(12, 2) NOT NULL, -- Final commission in NIS
@@ -529,6 +533,233 @@ CREATE POLICY "Users can view own commissions" ON commissions
             WHERE id = auth.uid() AND role = 'admin'
         )
     );
+
+-- Warehouses: Everyone can read active, only admins can modify
+CREATE POLICY "Anyone can view active warehouses" ON warehouses
+    FOR SELECT USING (is_active = TRUE);
+
+CREATE POLICY "Admins can manage warehouses" ON warehouses
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Pallets: Everyone can read, only admins can modify
+CREATE POLICY "Anyone can view pallets" ON pallets
+    FOR SELECT USING (TRUE);
+
+CREATE POLICY "Admins can manage pallets" ON pallets
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Customers: Coordinators can view their own, admins can view all
+CREATE POLICY "Coordinators can view own customers" ON customers
+    FOR SELECT USING (
+        hub_coordinator_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Coordinators can manage own customers" ON customers
+    FOR ALL USING (
+        hub_coordinator_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Distributor profiles: Users can view their own, admins can view all
+CREATE POLICY "Users can view own distributor profile" ON distributor_profiles
+    FOR SELECT USING (
+        user_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage distributor profiles" ON distributor_profiles
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Order items: Same as orders
+CREATE POLICY "Distributors can view own order items" ON order_items
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM orders
+            WHERE orders.id = order_items.order_id
+            AND (
+                orders.distributor_id = auth.uid() OR
+                EXISTS (
+                    SELECT 1 FROM profiles
+                    WHERE id = auth.uid() AND role IN ('admin', 'team_leader')
+                )
+            )
+        )
+    );
+
+CREATE POLICY "Admins can manage order items" ON order_items
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Pallet allocations: Same as orders
+CREATE POLICY "Admins can view pallet allocations" ON pallet_allocations
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage pallet allocations" ON pallet_allocations
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Stock reservations: Same as orders
+CREATE POLICY "Admins can view stock reservations" ON stock_reservations
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage stock reservations" ON stock_reservations
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Returns: Distributors can view their own, admins can view all
+CREATE POLICY "Distributors can view own returns" ON returns
+    FOR SELECT USING (
+        distributor_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage returns" ON returns
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Delivery sheets: Admins can view all
+CREATE POLICY "Admins can view delivery sheets" ON delivery_sheets
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage delivery sheets" ON delivery_sheets
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Delivery sheet items: Same as delivery sheets
+CREATE POLICY "Admins can view delivery sheet items" ON delivery_sheet_items
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage delivery sheet items" ON delivery_sheet_items
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Alerts: Users can view their own, admins can view all
+CREATE POLICY "Users can view own alerts" ON alerts
+    FOR SELECT USING (
+        target_user_id = auth.uid() OR
+        target_user_id IS NULL OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage alerts" ON alerts
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Performance metrics: Distributors can view their own, admins can view all
+CREATE POLICY "Distributors can view own performance" ON performance_metrics
+    FOR SELECT USING (
+        distributor_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+CREATE POLICY "Admins can manage performance metrics" ON performance_metrics
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Sales cycles: Everyone can read active, only admins can modify
+CREATE POLICY "Anyone can view active sales cycles" ON sales_cycles
+    FOR SELECT USING (is_active = TRUE);
+
+CREATE POLICY "Admins can manage sales cycles" ON sales_cycles
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Notifications: Users can view their own
+CREATE POLICY "Users can view own notifications" ON notifications
+    FOR SELECT USING (recipient_id = auth.uid());
+
+CREATE POLICY "Users can update own notifications" ON notifications
+    FOR UPDATE USING (recipient_id = auth.uid());
 
 -- ============================================================================
 -- SEED DATA (Optional - for development)

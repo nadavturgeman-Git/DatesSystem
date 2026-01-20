@@ -30,6 +30,8 @@ export interface DeliverySheet {
   driverName?: string
   deliveryDate: Date
   spareInventoryKg: number
+  totalWeightKg: number // Total weight of all items
+  totalVolumeM3?: number // Total volume in cubic meters (if calculated)
   notes?: string
   items: DeliverySheetItem[]
   createdBy: string
@@ -186,12 +188,20 @@ export async function generateDeliverySheet(
     })
   }
 
+  // Calculate total weight and volume
+  const totalWeightKg = items.reduce((sum, item) => sum + item.quantityKg, 0) + spareInventoryKg
+  // Estimate volume: dates have density ~1.2 kg/L, so 1 kg ≈ 0.833 L ≈ 0.000833 m³
+  // Using conservative estimate: 1 kg ≈ 0.001 m³ (1 cubic meter per 1000 kg)
+  const totalVolumeM3 = totalWeightKg * 0.001
+
   return {
     id: sheetId,
     sheetNumber: sheet.sheet_number as string,
     driverName: sheet.driver_name as string | undefined,
     deliveryDate: new Date(sheet.delivery_date as string),
     spareInventoryKg: Number(sheet.spare_inventory_kg),
+    totalWeightKg,
+    totalVolumeM3,
     notes: sheet.notes as string | undefined,
     items,
     createdBy: sheet.created_by as string,
@@ -258,12 +268,18 @@ export async function getDeliverySheet(sheetId: string): Promise<DeliverySheet |
     delivered: row.delivered as boolean,
   }))
 
+  // Calculate totals
+  const totalWeightKg = items.reduce((sum, item) => sum + item.quantityKg, 0) + Number(sheet.spare_inventory_kg)
+  const totalVolumeM3 = totalWeightKg * 0.001 // 1 kg ≈ 0.001 m³
+
   return {
     id: sheet.id as string,
     sheetNumber: sheet.sheet_number as string,
     driverName: sheet.driver_name as string | undefined,
     deliveryDate: new Date(sheet.delivery_date as string),
     spareInventoryKg: Number(sheet.spare_inventory_kg),
+    totalWeightKg,
+    totalVolumeM3,
     notes: sheet.notes as string | undefined,
     items,
     createdBy: sheet.created_by as string,

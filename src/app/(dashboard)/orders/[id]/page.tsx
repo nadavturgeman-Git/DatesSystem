@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import StockReceivedButton from '@/components/orders/StockReceivedButton';
+import MarkAsPaidButton from '@/components/orders/MarkAsPaidButton';
 
 interface PageProps {
   params: {
@@ -19,12 +21,13 @@ export default async function OrderDetailPage({ params }: PageProps) {
     redirect('/login');
   }
 
-  // Get order with distributor info
+  // Get order with distributor info and profile
   const { data: order } = await supabase
     .from('orders')
     .select(`
       *,
-      profiles:distributor_id (full_name, email, phone)
+      profiles:distributor_id (full_name, email, phone),
+      distributor_profiles:distributor_id (employment_model)
     `)
     .eq('id', params.id)
     .single();
@@ -32,6 +35,13 @@ export default async function OrderDetailPage({ params }: PageProps) {
   if (!order) {
     redirect('/orders');
   }
+
+  // Get user profile to check role
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
 
   // Get order items with product details
   const { data: orderItems } = await supabase
@@ -285,6 +295,25 @@ export default async function OrderDetailPage({ params }: PageProps) {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Mark as Paid Button (for Cash_Paybox distributors) */}
+      {profile?.role === 'distributor' && order.distributor_id === user.id && (
+        <MarkAsPaidButton
+          orderId={order.id}
+          paymentStatus={order.payment_status}
+          employmentModel={(order as any).distributor_profiles?.employment_model}
+          isDistributor={true}
+        />
+      )}
+
+      {/* Stock Received Button (for distributors) */}
+      {profile?.role === 'distributor' && order.distributor_id === user.id && (
+        <StockReceivedButton
+          orderId={order.id}
+          deliveryStatus={order.delivery_status}
+          isDistributor={true}
+        />
       )}
 
       {/* Notes */}

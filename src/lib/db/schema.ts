@@ -29,7 +29,7 @@ export const profiles = pgTable('profiles', {
   fullName: varchar('full_name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 20 }),
   email: varchar('email', { length: 255 }).notNull(),
-  teamLeaderId: uuid('team_leader_id').references(() => profiles.id),
+  teamLeaderId: uuid('team_leader_id'), // Self-reference handled via relations
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 })

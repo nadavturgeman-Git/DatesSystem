@@ -39,7 +39,9 @@ export async function getAvailableStock(productId: string): Promise<number> {
     SELECT get_available_stock(${productId}::uuid) as available_stock
   `)
 
-  return Number(result.rows[0]?.available_stock || 0)
+  // Handle both drizzle and raw postgres result formats
+  const rows = Array.isArray(result) ? result : (result as any).rows || []
+  return Number(rows[0]?.available_stock || 0)
 }
 
 /**
@@ -77,11 +79,14 @@ export async function allocateFIFO(
 
   const pallets = await db.execute(palletQuery)
 
+  // Handle both drizzle and raw postgres result formats
+  const palletsArray = Array.isArray(pallets) ? pallets : (pallets as any).rows || []
+
   const allocations: PalletAllocation[] = []
   let remainingToAllocate = requestedWeight
   let totalAllocated = 0
 
-  for (const pallet of pallets.rows) {
+  for (const pallet of palletsArray) {
     if (remainingToAllocate <= 0) break
 
     const availableInPallet = Number(pallet.current_weight_kg) - Number(pallet.reserved_weight)
@@ -144,7 +149,10 @@ export async function getOldestPallets(
 
   const pallets = await db.execute(palletQuery)
 
-  return pallets.rows.map(pallet => ({
+  // Handle both drizzle and raw postgres result formats
+  const palletsArray = Array.isArray(pallets) ? pallets : (pallets as any).rows || []
+
+  return palletsArray.map(pallet => ({
     palletId: pallet.id as string,
     palletIdReadable: pallet.pallet_id as string,
     allocatedWeight: 0,
@@ -207,7 +215,9 @@ export async function getAllocationHistory(orderItemId: string): Promise<PalletA
     ORDER BY pa.created_at ASC
   `)
 
-  return result.rows.map(row => ({
+  // Handle both drizzle and raw postgres result formats
+  const rows = Array.isArray(result) ? result : (result as any).rows || []
+  return rows.map(row => ({
     palletId: row.pallet_id as string,
     palletIdReadable: row.pallet_id_readable as string,
     allocatedWeight: Number(row.allocated_weight_kg),

@@ -146,6 +146,14 @@ export async function calculateDistributorCommission(
     }
   }
 
+  // Get distributor profile to check if Group Discount
+  const distributorProfileResult = await db.execute(sql`
+    SELECT is_group_discount
+    FROM distributor_profiles
+    WHERE user_id = ${order.distributor_id}::uuid
+  `)
+  const isGroupDiscount = distributorProfileResult.rows[0]?.is_group_discount || false
+
   // Insert commission record
   await db.execute(sql`
     INSERT INTO commissions (
@@ -153,6 +161,7 @@ export async function calculateDistributorCommission(
       order_id,
       commission_type,
       payment_type,
+      settlement_type,
       base_amount,
       commission_rate,
       commission_amount,
@@ -164,6 +173,7 @@ export async function calculateDistributorCommission(
       ${orderId}::uuid,
       'distributor',
       ${prefersGoods ? 'goods' : 'cash'},
+      ${isGroupDiscount ? 'group_discount' : 'invoice_payslip'},
       ${subtotal},
       ${rate},
       ${commissionAmount},

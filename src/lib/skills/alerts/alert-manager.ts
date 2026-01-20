@@ -13,6 +13,13 @@
 import { db } from '@/lib/db/client'
 import { sql } from 'drizzle-orm'
 
+// Helper function to normalize Drizzle results
+function getRows(result: any): any[] {
+  if (Array.isArray(result)) return result;
+  if (result?.rows && Array.isArray(result.rows)) return result.rows;
+  return [];
+}
+
 export type AlertType = 'low_performance' | 'spoilage_warning' | 'stock_low' | 'reservation_expired'
 
 export interface Alert {
@@ -49,7 +56,8 @@ export async function createAlert(
     RETURNING id, alert_type, target_user_id, title, message, metadata, is_read, is_resolved, created_at
   `)
 
-  const row = result.rows[0]
+  const rows = getRows(result)
+  const row = rows[0]
   return {
     id: row.id as string,
     type: row.alert_type as AlertType,
@@ -74,11 +82,12 @@ export async function check50kgRule(salesCycleId: string): Promise<Alert[]> {
     WHERE id = ${salesCycleId}::uuid
   `)
 
-  if (cycleResult.rows.length === 0) {
+  const cycleRows = getRows(cycleResult)
+  if (cycleRows.length === 0) {
     throw new Error('Sales cycle not found')
   }
 
-  const cycle = cycleResult.rows[0]
+  const cycle = cycleRows[0]
   const minimumKg = Number(cycle.minimum_order_kg || 50)
 
   // Get distributors who didn't meet minimum
@@ -100,7 +109,7 @@ export async function check50kgRule(salesCycleId: string): Promise<Alert[]> {
 
   const alerts: Alert[] = []
 
-  for (const row of underperformersResult.rows) {
+  for (const row of getRows(underperformersResult)) {
     const totalWeight = Number(row.total_weight)
     const shortfall = minimumKg - totalWeight
 
@@ -166,26 +175,29 @@ export async function checkSpoilageAlerts(): Promise<Alert[]> {
 
   const alerts: Alert[] = []
 
-  for (const warehouse of warehousesResult.rows) {
+  for (const warehouse of getRows(warehousesResult)) {
     const alertDays = Number(warehouse.spoilage_alert_days)
 
     // Find pallets that exceed storage duration
+    // PRD requirement: Check for fresh fruit in Jerusalem warehouse specifically
     const palletsResult = await db.execute(sql`
       SELECT
         p.id,
         p.pallet_id,
         p.entry_date,
         p.current_weight_kg,
+        p.is_fresh_fruit,
         pr.name as product_name,
         EXTRACT(DAY FROM (NOW() - p.entry_date)) as days_stored
       FROM pallets p
       JOIN products pr ON pr.id = p.product_id
       WHERE p.warehouse_id = ${warehouse.id}::uuid
       AND p.is_depleted = FALSE
+      AND p.is_fresh_fruit = TRUE
       AND p.entry_date < NOW() - (${alertDays} || ' days')::interval
     `)
 
-    for (const pallet of palletsResult.rows) {
+    for (const pallet of getRows(palletsResult)) {
       const daysStored = Math.floor(Number(pallet.days_stored))
 
       const alert = await createAlert(
@@ -231,7 +243,7 @@ export async function checkLowStockAlerts(thresholdKg: number = 100): Promise<Al
 
   const alerts: Alert[] = []
 
-  for (const row of result.rows) {
+  for (const row of getRows(result)) {
     const totalStock = Number(row.total_stock)
 
     const alert = await createAlert(
@@ -289,7 +301,7 @@ export async function getUnreadAlerts(userId?: string): Promise<Alert[]> {
     ORDER BY created_at DESC
   `)
 
-  return result.rows.map(row => ({
+  return getRows(result).map(row => ({
     id: row.id as string,
     type: row.alert_type as AlertType,
     targetUserId: row.target_user_id as string | undefined,

@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       orderItemsData.push({
         product_id: item.productId,
         quantity_kg: item.quantity,
-        price_per_kg: product.price_per_kg,
+        unit_price: product.price_per_kg,
         subtotal: itemTotal,
       });
     }
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     // Create stock reservations using Virtual Lock skill
     for (const item of items) {
-      const reservationResult = await createReservations(supabase, {
+      const reservationResult = await createReservations({
         orderId: order.id,
         productId: item.productId,
         requestedWeight: item.quantity,
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             error: `Failed to reserve stock for product. ${
-              reservationResult.error || 'Insufficient inventory'
+              reservationResult.message || 'Insufficient inventory'
             }`,
           },
           { status: 400 }

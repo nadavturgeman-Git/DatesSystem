@@ -12,6 +12,7 @@ export default function SignupPage() {
     confirmPassword: '',
     fullName: '',
     phone: '',
+    settlementProfile: '' as 'Payslip' | 'Private_Business' | 'Cash_Paybox' | 'Goods_Commission' | '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -33,6 +34,13 @@ export default function SignupPage() {
     // Validate password length
     if (formData.password.length < 6) {
       setError('הסיסמה חייבת להכיל לפחות 6 תווים');
+      setLoading(false);
+      return;
+    }
+
+    // Validate settlement profile selection
+    if (!formData.settlementProfile) {
+      setError('יש לבחור פרופיל התחשבנות');
       setLoading(false);
       return;
     }
@@ -70,6 +78,23 @@ export default function SignupPage() {
           return;
         }
 
+        // Create distributor profile with settlement profile
+        const { error: distributorProfileError } = await supabase
+          .from('distributor_profiles')
+          .insert({
+            user_id: authData.user.id,
+            employment_model: formData.settlementProfile,
+            preferred_payment_method: formData.settlementProfile === 'Cash_Paybox' ? 'cash' :
+                                      formData.settlementProfile === 'Goods_Commission' ? 'cash' :
+                                      'credit_card',
+            prefers_commission_in_goods: formData.settlementProfile === 'Goods_Commission',
+          });
+
+        if (distributorProfileError) {
+          console.error('Failed to create distributor profile:', distributorProfileError);
+          // Don't block signup if this fails, just log it
+        }
+
         // Success - redirect to dashboard
         router.push('/dashboard');
         router.refresh();
@@ -81,7 +106,7 @@ export default function SignupPage() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -174,6 +199,30 @@ export default function SignupPage() {
             placeholder="050-1234567"
             disabled={loading}
           />
+        </div>
+
+        <div>
+          <label htmlFor="settlementProfile" className="block text-sm font-medium text-gray-700 mb-2">
+            פרופיל התחשבנות *
+          </label>
+          <select
+            id="settlementProfile"
+            name="settlementProfile"
+            value={formData.settlementProfile}
+            onChange={handleChange}
+            required
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+            disabled={loading}
+          >
+            <option value="">בחר פרופיל התחשבנות</option>
+            <option value="Payslip">תלוש משכורת (עובד שכיר)</option>
+            <option value="Private_Business">עסק פרטי (עוסק מורשה / חברה)</option>
+            <option value="Cash_Paybox">מזומן / Paybox</option>
+            <option value="Goods_Commission">עמלה בסחורה</option>
+          </select>
+          <p className="mt-2 text-sm text-gray-600">
+            בחר את סוג ההתחשבנות המתאים לסטטוס העסקי שלך. זה חשוב לצורכי מיסוי וחשבונאות.
+          </p>
         </div>
 
         <div>

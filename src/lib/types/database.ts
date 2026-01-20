@@ -10,6 +10,8 @@ export type CommissionPaymentType = 'cash' | 'goods'
 export type WarehouseType = 'freezing' | 'cooling'
 export type ReturnReason = 'damaged' | 'missed_collection' | 'quality_issue' | 'other'
 export type AlertType = 'low_performance' | 'spoilage_warning' | 'stock_low' | 'reservation_expired'
+export type EmploymentModel = 'Credit_Commission' | 'Cash_Paybox' | 'Goods_Commission'
+export type DeliveryStatus = 'Pending' | 'In_Transit' | 'Delivered_to_Distributor' | 'Picked_up_by_Customer'
 
 export interface Profile {
   id: string
@@ -31,6 +33,11 @@ export interface DistributorProfile {
   commission_rate: number
   prefers_commission_in_goods: boolean
   account_balance: number
+  employment_model?: EmploymentModel
+  preferred_delivery_windows?: {
+    days?: number[]
+    hours?: Array<{ start: string; end: string }>
+  }
   created_at: string
   updated_at: string
 }
@@ -69,6 +76,7 @@ export interface Pallet {
   batch_number?: string
   expiry_date?: string
   is_depleted: boolean
+  is_fresh_fruit?: boolean
   created_at: string
   updated_at: string
 }
@@ -80,6 +88,7 @@ export interface Order {
   status: OrderStatus
   payment_status: PaymentStatus
   payment_method?: PaymentMethod
+  delivery_status?: DeliveryStatus
   total_weight_kg: number
   subtotal: number
   commission_amount: number
@@ -89,6 +98,8 @@ export interface Order {
   updated_at: string
   paid_at?: string
   reservation_expires_at?: string
+  loading_approved_at?: string
+  loading_approved_by?: string
 }
 
 // Additional types to be added as needed

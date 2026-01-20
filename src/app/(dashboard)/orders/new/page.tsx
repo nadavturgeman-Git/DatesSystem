@@ -168,7 +168,7 @@ export default function NewOrderPage() {
                   <option value="">בחר מוצר</option>
                   {products.map((product) => (
                     <option key={product.id} value={product.id}>
-                      {product.name} - ₪{product.price_per_kg}/ק"ג
+                      {product.name} - ₪{product.price_per_kg}/ק&quot;ג
                     </option>
                   ))}
                 </select>
@@ -176,7 +176,7 @@ export default function NewOrderPage() {
 
               <div className="w-40">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  כמות (ק"ג)
+                  כמות (ק&quot;ג)
                 </label>
                 <input
                   type="number"
@@ -245,7 +245,7 @@ export default function NewOrderPage() {
                   </div>
 
                   <p className="text-sm text-gray-600 mb-3">
-                    מבוקש: {item.quantity} ק"ג | משוקצה: {item.actualWeight} ק"ג
+                    מבוקש: {item.quantity} ק&quot;ג | משוקצה: {item.actualWeight} ק"ג
                   </p>
 
                   <div className="space-y-2">
@@ -258,7 +258,7 @@ export default function NewOrderPage() {
                         <span className="text-gray-700">
                           פלטה #{i + 1} ({new Date(alloc.entry_date).toLocaleDateString('he-IL')})
                         </span>
-                        <span className="font-medium">{alloc.allocatedWeight} ק"ג</span>
+                        <span className="font-medium">{alloc.allocatedWeight} ק&quot;ג</span>
                       </div>
                     ))}
                   </div>
@@ -274,7 +274,7 @@ export default function NewOrderPage() {
             <div className="space-y-3">
               <div className="flex justify-between text-gray-700">
                 <span>משקל כולל:</span>
-                <span className="font-semibold">{preview.totalWeight.toFixed(2)} ק"ג</span>
+                <span className="font-semibold">{preview.totalWeight.toFixed(2)} ק&quot;ג</span>
               </div>
 
               <div className="flex justify-between text-gray-700">
@@ -289,7 +289,7 @@ export default function NewOrderPage() {
 
               <div className="border-t border-gray-200 pt-3">
                 <div className="flex justify-between text-lg font-bold text-gray-900">
-                  <span>סה"כ לתשלום:</span>
+                  <span>סה&quot;כ לתשלום:</span>
                   <span>₪{preview.totalAmount.toFixed(2)}</span>
                 </div>
               </div>

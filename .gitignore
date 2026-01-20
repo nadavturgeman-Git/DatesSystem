@@ -8,6 +8,9 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/.playwright/
 
 # next.js
 /.next/
@@ -38,3 +41,10 @@ next-env.d.ts
 
 # drizzle
 drizzle/
+
+# secrets - DO NOT COMMIT
+.secrets/
+*.secrets
+
+# Cursor MCP config (project-specific, may contain tokens)
+.cursor/

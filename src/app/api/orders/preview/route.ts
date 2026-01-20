@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Get FIFO allocation plan
-      const allocation = await allocateFIFO(supabase, item.productId, item.quantity);
+      const allocation = await allocateFIFO(item.productId, item.quantity);
 
       const itemTotal = item.quantity * product.price_per_kg;
 
@@ -53,10 +53,10 @@ export async function POST(request: NextRequest) {
         itemTotal,
         allocation: allocation.allocations,
         fullyFulfilled: allocation.fullyFulfilled,
-        actualWeight: allocation.allocatedWeight,
+        actualWeight: allocation.totalAllocated,
       });
 
-      totalWeight += allocation.allocatedWeight;
+      totalWeight += allocation.totalAllocated;
       subtotal += itemTotal;
     }
 
