@@ -154,7 +154,7 @@ export async function calculateDistributorCommission(
   `)
   const isGroupDiscount = distributorProfileResult.rows[0]?.is_group_discount || false
 
-  // Insert commission record
+  // Insert or update commission record (idempotent - safe to call multiple times)
   await db.execute(sql`
     INSERT INTO commissions (
       user_id,
@@ -180,6 +180,15 @@ export async function calculateDistributorCommission(
       ${productId ? sql`${productId}::uuid` : sql`NULL`},
       ${productQuantityKg || null}
     )
+    ON CONFLICT (order_id, user_id, commission_type)
+    DO UPDATE SET
+      payment_type = EXCLUDED.payment_type,
+      settlement_type = EXCLUDED.settlement_type,
+      base_amount = EXCLUDED.base_amount,
+      commission_rate = EXCLUDED.commission_rate,
+      commission_amount = EXCLUDED.commission_amount,
+      product_id = EXCLUDED.product_id,
+      product_quantity_kg = EXCLUDED.product_quantity_kg
   `)
 
   return {
@@ -224,7 +233,7 @@ export async function calculateTeamLeaderCommission(
 
   const commissionAmount = calculateCommissionAmount(subtotal, TEAM_LEADER_RATE)
 
-  // Insert commission record
+  // Insert or update commission record (idempotent - safe to call multiple times)
   await db.execute(sql`
     INSERT INTO commissions (
       user_id,
@@ -244,6 +253,12 @@ export async function calculateTeamLeaderCommission(
       ${TEAM_LEADER_RATE},
       ${commissionAmount}
     )
+    ON CONFLICT (order_id, user_id, commission_type)
+    DO UPDATE SET
+      payment_type = EXCLUDED.payment_type,
+      base_amount = EXCLUDED.base_amount,
+      commission_rate = EXCLUDED.commission_rate,
+      commission_amount = EXCLUDED.commission_amount
   `)
 
   return {

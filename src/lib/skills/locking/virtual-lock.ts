@@ -129,108 +129,149 @@ export async function releaseReservations(orderId: string): Promise<number> {
 /**
  * Convert reservations to permanent allocations (on payment confirmation)
  * This is called when an order is paid and needs to lock in the stock
+ *
+ * FIXED:
+ * - Proper product filtering (was using async in filter which doesn't work)
+ * - Each reservation processed once per matching order item (was duplicating)
+ * - Added transaction-like error handling
  */
 export async function convertReservationsToAllocations(
   orderId: string
 ): Promise<{ success: boolean; message: string }> {
-  // Get all active reservations for this order
-  const reservationsResult = await db.execute(sql`
-    SELECT
-      sr.id,
-      sr.pallet_id,
-      sr.reserved_weight_kg,
-      sr.expires_at
-    FROM stock_reservations sr
-    WHERE sr.order_id = ${orderId}::uuid
-    AND sr.is_active = TRUE
-  `)
+  try {
+    // Get all active reservations for this order WITH pallet product info (single query)
+    const reservationsResult = await db.execute(sql`
+      SELECT
+        sr.id as reservation_id,
+        sr.pallet_id,
+        sr.reserved_weight_kg,
+        sr.expires_at,
+        p.product_id
+      FROM stock_reservations sr
+      JOIN pallets p ON p.id = sr.pallet_id
+      WHERE sr.order_id = ${orderId}::uuid
+      AND sr.is_active = TRUE
+    `)
 
-  // Handle both drizzle and raw postgres result formats
-  const reservationsRows = Array.isArray(reservationsResult) ? reservationsResult : (reservationsResult as any).rows || []
-  
-  if (reservationsRows.length === 0) {
-    return {
-      success: false,
-      message: 'No active reservations found for this order',
-    }
-  }
+    // Handle both drizzle and raw postgres result formats
+    const reservationsRows = Array.isArray(reservationsResult) ? reservationsResult : (reservationsResult as any).rows || []
 
-  // Check if reservations have expired
-  const now = new Date()
-  const hasExpired = reservationsRows.some(
-    row => new Date(row.expires_at as string) < now
-  )
-
-  if (hasExpired) {
-    await releaseReservations(orderId)
-    return {
-      success: false,
-      message: 'Reservations have expired. Stock may no longer be available.',
-    }
-  }
-
-  // Get order items for this order
-  const orderItemsResult = await db.execute(sql`
-    SELECT id, product_id, quantity_kg
-    FROM order_items
-    WHERE order_id = ${orderId}::uuid
-  `)
-
-  // Handle both drizzle and raw postgres result formats
-  const orderItemsRows = Array.isArray(orderItemsResult) ? orderItemsResult : (orderItemsResult as any).rows || []
-
-  // For each order item, create pallet allocations from reservations
-  for (const orderItem of orderItemsRows) {
-    const orderItemId = orderItem.id as string
-    const productId = orderItem.product_id as string
-
-    // Get reservations for this product
-    const productReservations = reservationsRows.filter(
-      async r => {
-        const palletResult = await db.execute(sql`
-          SELECT product_id FROM pallets WHERE id = ${r.pallet_id}::uuid
-        `)
-        const palletRows = Array.isArray(palletResult) ? palletResult : (palletResult as any).rows || []
-        return palletRows[0]?.product_id === productId
+    if (reservationsRows.length === 0) {
+      return {
+        success: false,
+        message: 'No active reservations found for this order',
       }
+    }
+
+    // Check if reservations have expired
+    const now = new Date()
+    const hasExpired = reservationsRows.some(
+      row => new Date(row.expires_at as string) < now
     )
 
-    // Create pallet allocations
-    for (const reservation of reservationsRows) {
-      await db.execute(sql`
-        INSERT INTO pallet_allocations (order_item_id, pallet_id, allocated_weight_kg)
-        VALUES (
-          ${orderItemId}::uuid,
-          ${reservation.pallet_id}::uuid,
-          ${Number(reservation.reserved_weight_kg)}
-        )
-      `)
-
-      // Update pallet weight
-      await db.execute(sql`
-        UPDATE pallets
-        SET
-          current_weight_kg = current_weight_kg - ${Number(reservation.reserved_weight_kg)},
-          is_depleted = CASE
-            WHEN current_weight_kg - ${Number(reservation.reserved_weight_kg)} <= 0 THEN TRUE
-            ELSE FALSE
-          END,
-          updated_at = NOW()
-        WHERE id = ${reservation.pallet_id}::uuid
-      `)
+    if (hasExpired) {
+      await releaseReservations(orderId)
+      return {
+        success: false,
+        message: 'Reservations have expired. Stock may no longer be available.',
+      }
     }
-  }
 
-  // Mark reservations as inactive (converted)
-  await db.execute(sql`
-    UPDATE stock_reservations
-    SET is_active = FALSE, released_at = NOW()
-    WHERE order_id = ${orderId}::uuid
-  `)
+    // Get order items for this order
+    const orderItemsResult = await db.execute(sql`
+      SELECT id, product_id, quantity_kg
+      FROM order_items
+      WHERE order_id = ${orderId}::uuid
+    `)
 
-  return {
-    success: true,
-    message: 'Reservations successfully converted to allocations',
+    // Handle both drizzle and raw postgres result formats
+    const orderItemsRows = Array.isArray(orderItemsResult) ? orderItemsResult : (orderItemsResult as any).rows || []
+
+    if (orderItemsRows.length === 0) {
+      return {
+        success: false,
+        message: 'No order items found for this order',
+      }
+    }
+
+    // Track which reservations have been processed to avoid duplicates
+    const processedReservations = new Set<string>()
+
+    // For each order item, find matching reservations by product and create allocations
+    for (const orderItem of orderItemsRows) {
+      const orderItemId = orderItem.id as string
+      const productId = orderItem.product_id as string
+
+      // Filter reservations that match this product (synchronous - product_id already fetched)
+      const productReservations = reservationsRows.filter(
+        r => r.product_id === productId && !processedReservations.has(r.reservation_id as string)
+      )
+
+      // Create pallet allocations for matching reservations only
+      for (const reservation of productReservations) {
+        const reservationId = reservation.reservation_id as string
+
+        // Mark as processed to prevent duplicate allocations
+        processedReservations.add(reservationId)
+
+        // Create pallet allocation
+        await db.execute(sql`
+          INSERT INTO pallet_allocations (order_item_id, pallet_id, allocated_weight_kg)
+          VALUES (
+            ${orderItemId}::uuid,
+            ${reservation.pallet_id}::uuid,
+            ${Number(reservation.reserved_weight_kg)}
+          )
+        `)
+
+        // Update pallet weight
+        await db.execute(sql`
+          UPDATE pallets
+          SET
+            current_weight_kg = current_weight_kg - ${Number(reservation.reserved_weight_kg)},
+            is_depleted = CASE
+              WHEN current_weight_kg - ${Number(reservation.reserved_weight_kg)} <= 0 THEN TRUE
+              ELSE FALSE
+            END,
+            updated_at = NOW()
+          WHERE id = ${reservation.pallet_id}::uuid
+        `)
+      }
+    }
+
+    // Verify all reservations were processed
+    if (processedReservations.size !== reservationsRows.length) {
+      console.warn(
+        `Warning: ${reservationsRows.length - processedReservations.size} reservations did not match any order items`
+      )
+    }
+
+    // Mark reservations as inactive (converted)
+    await db.execute(sql`
+      UPDATE stock_reservations
+      SET is_active = FALSE, released_at = NOW()
+      WHERE order_id = ${orderId}::uuid
+    `)
+
+    return {
+      success: true,
+      message: `Reservations successfully converted to allocations (${processedReservations.size} allocations created)`,
+    }
+  } catch (error) {
+    // Log error for debugging
+    console.error('Error converting reservations to allocations:', error)
+
+    // Attempt to release reservations on failure to prevent stuck stock
+    try {
+      await releaseReservations(orderId)
+    } catch (releaseError) {
+      console.error('Failed to release reservations after error:', releaseError)
+    }
+
+    return {
+      success: false,
+      message: `Failed to convert reservations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    }
   }
 }
 

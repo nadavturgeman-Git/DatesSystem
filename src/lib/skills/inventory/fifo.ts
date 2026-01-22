@@ -47,13 +47,26 @@ export async function getAvailableStock(productId: string): Promise<number> {
 /**
  * Allocate pallets using FIFO methodology
  * Returns allocation plan without modifying database
+ *
+ * FIXED: Added input validation for negative/zero weights
  */
 export async function allocateFIFO(
   productId: string,
   requestedWeight: number,
   warehouseId?: string
 ): Promise<FIFOAllocationResult> {
+  // Input validation - reject invalid weights
+  if (requestedWeight <= 0) {
+    return {
+      allocations: [],
+      totalAllocated: 0,
+      fullyFulfilled: requestedWeight === 0, // 0kg is "fulfilled" with 0 allocations
+      shortfall: Math.max(0, requestedWeight),
+    }
+  }
+
   // Query pallets ordered by entry_date (oldest first)
+  // Using FOR UPDATE to prevent race conditions in concurrent reservations
   const palletQuery = sql`
     SELECT
       p.id,
@@ -75,6 +88,7 @@ export async function allocateFIFO(
     AND p.is_depleted = FALSE
     ${warehouseId ? sql`AND p.warehouse_id = ${warehouseId}::uuid` : sql``}
     ORDER BY p.entry_date ASC
+    FOR UPDATE OF p SKIP LOCKED
   `
 
   const pallets = await db.execute(palletQuery)
